@@ -1,5 +1,12 @@
-const nodeWidth = 180;
-const nodeHeight = 60;
+const defaultNodeWidth = 180;
+const nodeHeight = 65;
+
+// Fonction pour estimer la largeur de carte nécessaire selon le texte
+function calculateNodeWidth(name) {
+  const charCount = name ? name.length : 0;
+  // Base minimale de 180px + marge proportionnelle si le nom est long
+  return Math.max(defaultNodeWidth, charCount * 9.5 + 24);
+}
 
 // Charger le fichier Excel 'data/arbre.xlsx'
 fetch('data/arbre.xlsx')
@@ -9,21 +16,21 @@ fetch('data/arbre.xlsx')
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
-    // Conversion de la feuille Excel en tableau d'objets JS
     const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-    // Traitement des données et correspondance exacte avec tes colonnes
     const dataBySosa = {};
 
     rawData.forEach(row => {
       const sosa = parseInt(row['N° SOSA'], 10);
       
-      // On conserve uniquement les personnes possédant un N° SOSA valide
       if (!isNaN(sosa)) {
+        // Détermination du genre selon les règles Sosa (Sosa 1 est un homme)
+        const isMale = sosa === 1 || sosa % 2 === 0;
+
         dataBySosa[sosa] = {
           sosa: sosa,
           generation: row['Rang / Gén.'],
-          personne: row['Personne'],
+          personne: String(row['Personne']).trim(),
+          isMale: isMale,
           dateNaissance: row['Date de naissance'],
           lieuNaissance: row['Lieu de naissance'],
           conjoint: row['Conjoint(e)'],
@@ -35,14 +42,13 @@ fetch('data/arbre.xlsx')
           age: row['Âge'],
           profession: row['Profession'],
           notes: row['Notes'],
-          // Paternité / Maternité théorique Sosa
           fatherSosa: sosa * 2,
           motherSosa: (sosa * 2) + 1
         };
       }
     });
 
-    // Construction récursive de l'arbre binaire
+    // Construction récursive de l'arbre
     function buildHierarchy(sosa) {
       const person = dataBySosa[sosa];
       if (!person) return null;
@@ -69,23 +75,25 @@ fetch('data/arbre.xlsx')
     }
 
     const root = d3.hierarchy(rootData);
-    const treeLayout = d3.tree().nodeSize([nodeWidth + 40, nodeHeight + 80]);
+    
+    // Disposition de l'arbre avec espacement dynamique
+    const treeLayout = d3.tree().nodeSize([220, nodeHeight + 85]);
     treeLayout(root);
 
-    // Initialisation du canevas SVG
+    // Initialisation SVG
     const svg = d3.select("#tree-container").append("svg").attr("width", "100%").attr("height", "100%");
     const g = svg.append("g");
 
-    // Gestion du Zoom et Pan
+    // Zoom & Pan
     const zoom = d3.zoom().scaleExtent([0.1, 2.5]).on("zoom", (event) => g.attr("transform", event.transform));
     svg.call(zoom);
 
-    // Centrage initial sur le SOSA 1 (en bas au centre)
+    // Centrage initial
     const initialX = window.innerWidth / 2;
     const initialY = window.innerHeight - 150;
     svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(0.8));
 
-    // Tracé des branches (liens)
+    // Liens (Traits noirs épais)
     g.selectAll(".link")
       .data(root.links())
       .enter()
@@ -93,25 +101,48 @@ fetch('data/arbre.xlsx')
       .attr("class", "link")
       .attr("d", d3.linkVertical().x(d => d.x).y(d => -d.y));
 
-    // Tracé des cartes (nœuds)
+    // Nœuds (Cartes personnes)
     const nodes = g.selectAll(".node")
       .data(root.descendants())
       .enter()
       .append("g")
-      .attr("class", "node")
-      .attr("transform", d => `translate(${d.x - nodeWidth / 2}, ${-d.y - nodeHeight / 2})`);
+      .attr("class", d => `node ${d.data.isMale ? 'node-male' : 'node-female'}`)
+      .attr("transform", d => {
+        const w = calculateNodeWidth(d.data.personne);
+        return `translate(${d.x - w / 2}, ${-d.y - nodeHeight / 2})`;
+      });
 
-    nodes.append("rect").attr("width", nodeWidth).attr("height", nodeHeight);
+    // Rectangle avec largeur adaptée au contenu
+    nodes.append("rect")
+      .attr("width", d => calculateNodeWidth(d.data.personne))
+      .attr("height", nodeHeight);
 
-    nodes.append("text").attr("class", "sosa").attr("x", 8).attr("y", 15).text(d => `Sosa ${d.data.sosa}`);
-    nodes.append("text").attr("class", "name").attr("x", 8).attr("y", 32).text(d => d.data.personne);
-    nodes.append("text").attr("class", "dates").attr("x", 8).attr("y", 48).text(d => {
-      const n = d.data.dateNaissance ? String(d.data.dateNaissance).split('/').pop() : '?';
-      const dcs = d.data.dateDeces ? String(d.data.dateDeces).split('/').pop() : '';
-      return `${n} - ${dcs}`;
-    });
+    // SOSA
+    nodes.append("text")
+      .attr("class", "sosa")
+      .attr("x", 10)
+      .attr("y", 16)
+      .text(d => `Sosa ${d.data.sosa}`);
 
-    // Gestion du survol (Hover) pour l'Info-bulle
+    // Nom complet
+    nodes.append("text")
+      .attr("class", "name")
+      .attr("x", 10)
+      .attr("y", 35)
+      .text(d => d.data.personne);
+
+    // Dates
+    nodes.append("text")
+      .attr("class", "dates")
+      .attr("x", 10)
+      .attr("y", 53)
+      .text(d => {
+        const n = d.data.dateNaissance ? String(d.data.dateNaissance).split('/').pop() : '?';
+        const dcs = d.data.dateDeces ? String(d.data.dateDeces).split('/').pop() : '';
+        return `${n} - ${dcs}`;
+      });
+
+    // Tooltip
     const tooltip = d3.select("#tooltip");
 
     nodes.on("mouseover", (event, d) => {
