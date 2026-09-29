@@ -1,0 +1,147 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body, html {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #f8fafc;
+}
+
+/* En-tête */
+header {
+  position: absolute;
+  top: 15px;
+  left: 20px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  backdrop-filter: blur(4px);
+}
+
+header h1 {
+  font-size: 1.2rem;
+  color: #1e293b;
+}
+
+header p {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+/* Conteneur SVG */
+#tree-container {
+  width: 100vw;
+  height: 100vh;
+  cursor: grab;
+}
+
+#tree-container:active {
+  cursor: grabbing;
+}
+
+/* Liens / Branches */
+.link {
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 2px;
+}
+
+/* Cartes individuelles */
+.node {
+  cursor: pointer;
+}
+
+.node rect {
+  stroke-width: 2px;
+  transition: all 0.2s ease;
+  rx: 8px;
+  ry: 8px;
+  fill: #ffffff;
+  stroke: #475569;
+}
+
+.node:hover rect {
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.15));
+  stroke-width: 3px;
+  stroke: #0284c7;
+}
+
+.node text.name {
+  font-weight: 600;
+  font-size: 13px;
+  fill: #0f172a;
+}
+
+.node text.dates {
+  font-size: 11px;
+  fill: #64748b;
+}
+
+.node text.sosa {
+  font-size: 10px;
+  font-weight: 700;
+  fill: #0284c7;
+}
+
+/* Info-bulle (Tooltip) au survol */
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+  width: 330px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  transition: opacity 0.15s ease-in-out;
+  z-index: 100;
+}
+
+.tooltip-header {
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.tooltip-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.tooltip-subtitle {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.tooltip-row {
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #334155;
+}
+
+.tooltip-row strong {
+  color: #475569;
+}
+
+.tooltip-notes {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+  font-style: italic;
+  font-size: 0.8rem;
+  color: #b45309;
+  background-color: #fef3c7;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
