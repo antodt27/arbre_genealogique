@@ -1,11 +1,11 @@
 const defaultNodeWidth = 180;
 const nodeHeight = 65;
 
-// Fonction pour estimer la largeur de carte nécessaire selon le texte
+// Fonction pour calculer la largeur de la carte selon le texte
 function calculateNodeWidth(name) {
-  const charCount = name ? name.length : 0;
-  // Base minimale de 180px + marge proportionnelle si le nom est long
-  return Math.max(defaultNodeWidth, charCount * 9.5 + 24);
+  const charCount = name ? String(name).length : 0;
+  // Largeur dynamique avec un minimum de 180px
+  return Math.max(defaultNodeWidth, charCount * 9 + 30);
 }
 
 // Charger le fichier Excel 'data/arbre.xlsx'
@@ -23,7 +23,7 @@ fetch('data/arbre.xlsx')
       const sosa = parseInt(row['N° SOSA'], 10);
       
       if (!isNaN(sosa)) {
-        // Détermination du genre selon les règles Sosa (Sosa 1 est un homme)
+        // Détermination du genre selon la règle Sosa (Sosa 1 est un homme)
         const isMale = sosa === 1 || sosa % 2 === 0;
 
         dataBySosa[sosa] = {
@@ -48,7 +48,7 @@ fetch('data/arbre.xlsx')
       }
     });
 
-    // Construction récursive de l'arbre
+    // Construction récursive de la hiérarchie
     function buildHierarchy(sosa) {
       const person = dataBySosa[sosa];
       if (!person) return null;
@@ -76,24 +76,37 @@ fetch('data/arbre.xlsx')
 
     const root = d3.hierarchy(rootData);
     
-    // Disposition de l'arbre avec espacement dynamique
-    const treeLayout = d3.tree().nodeSize([220, nodeHeight + 85]);
+    // Configuration du layout avec espacement dynamique entre nœuds voisins
+    const treeLayout = d3.tree()
+      .nodeSize([280, nodeHeight + 85]) // Augmentation du pas de base X (280px)
+      .separation((a, b) => {
+        // Calcul du besoin de largeur combinée des deux nœuds adjacents
+        const widthA = calculateNodeWidth(a.data.personne);
+        const widthB = calculateNodeWidth(b.data.personne);
+        const requiredSpacing = (widthA + widthB) / 2 + 40; // 40px d'espace de sécurité entre cartes
+        const baseStep = 280;
+        
+        const factor = requiredSpacing / baseStep;
+        // Si a et b sont de mêmes parents, on applique la distance calculée, sinon un peu plus
+        return a.parent === b.parent ? Math.max(1.1, factor) : Math.max(1.3, factor * 1.15);
+      });
+
     treeLayout(root);
 
-    // Initialisation SVG
+    // Initialisation du SVG
     const svg = d3.select("#tree-container").append("svg").attr("width", "100%").attr("height", "100%");
     const g = svg.append("g");
 
-    // Zoom & Pan
+    // Gestion du Zoom et Pan
     const zoom = d3.zoom().scaleExtent([0.1, 2.5]).on("zoom", (event) => g.attr("transform", event.transform));
     svg.call(zoom);
 
-    // Centrage initial
+    // Centrage initial sur le SOSA 1
     const initialX = window.innerWidth / 2;
     const initialY = window.innerHeight - 150;
     svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(0.8));
 
-    // Liens (Traits noirs épais)
+    // Dessin des liens (Traits noirs)
     g.selectAll(".link")
       .data(root.links())
       .enter()
@@ -101,7 +114,7 @@ fetch('data/arbre.xlsx')
       .attr("class", "link")
       .attr("d", d3.linkVertical().x(d => d.x).y(d => -d.y));
 
-    // Nœuds (Cartes personnes)
+    // Dessin des cartes (Nœuds)
     const nodes = g.selectAll(".node")
       .data(root.descendants())
       .enter()
@@ -112,12 +125,12 @@ fetch('data/arbre.xlsx')
         return `translate(${d.x - w / 2}, ${-d.y - nodeHeight / 2})`;
       });
 
-    // Rectangle avec largeur adaptée au contenu
+    // Rectangle avec largeur adaptée
     nodes.append("rect")
       .attr("width", d => calculateNodeWidth(d.data.personne))
       .attr("height", nodeHeight);
 
-    // SOSA
+    // N° Sosa
     nodes.append("text")
       .attr("class", "sosa")
       .attr("x", 10)
@@ -142,7 +155,7 @@ fetch('data/arbre.xlsx')
         return `${n} - ${dcs}`;
       });
 
-    // Tooltip
+    // Info-bulle au survol (Tooltip)
     const tooltip = d3.select("#tooltip");
 
     nodes.on("mouseover", (event, d) => {
