@@ -46,11 +46,11 @@ header p {
   cursor: grabbing;
 }
 
-/* Liens / Branches */
+/* Liens / Traits de liaison en noir et plus épais */
 .link {
   fill: none;
-  stroke: #cbd5e1;
-  stroke-width: 2px;
+  stroke: #000000;
+  stroke-width: 3px;
 }
 
 /* Cartes individuelles */
@@ -59,18 +59,26 @@ header p {
 }
 
 .node rect {
-  stroke-width: 2px;
+  stroke-width: 2.5px;
   transition: all 0.2s ease;
   rx: 8px;
   ry: 8px;
   fill: #ffffff;
-  stroke: #475569;
+}
+
+/* Encadrés hommes en bleu */
+.node-male rect {
+  stroke: #0284c7;
+}
+
+/* Encadrés femmes en rose */
+.node-female rect {
+  stroke: #ec4899;
 }
 
 .node:hover rect {
-  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.15));
-  stroke-width: 3px;
-  stroke: #0284c7;
+  filter: drop-shadow(0 6px 12px rgba(0, 0, 0, 0.18));
+  stroke-width: 4px;
 }
 
 .node text.name {
@@ -87,7 +95,7 @@ header p {
 .node text.sosa {
   font-size: 10px;
   font-weight: 700;
-  fill: #0284c7;
+  fill: #475569;
 }
 
 /* Info-bulle (Tooltip) au survol */
