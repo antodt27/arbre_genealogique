@@ -4,8 +4,24 @@ const nodeHeight = 65;
 // Fonction pour calculer la largeur de la carte selon le texte
 function calculateNodeWidth(name) {
   const charCount = name ? String(name).length : 0;
-  // Largeur dynamique avec un minimum de 180px
   return Math.max(defaultNodeWidth, charCount * 9 + 30);
+}
+
+// Fonction robuste pour extraire l'année (texte, JJ/MM/AAAA ou nombre sériel Excel)
+function extractYear(val) {
+  if (!val) return '';
+  if (typeof val === 'number') {
+    const d = new Date(Math.round((val - (25569 + 2)) * 86400 * 1000));
+    return !isNaN(d.getFullYear()) ? d.getFullYear() : val;
+  }
+  const s = String(val).trim();
+  if (s.includes('/')) {
+    const parts = s.split('/');
+    return parts[parts.length - 1].trim();
+  }
+  const match = s.match(/\b(1[5-9]\d{2}|20\d{2})\b/);
+  if (match) return match[0];
+  return s;
 }
 
 // Charger le fichier Excel 'data/arbre.xlsx'
@@ -16,20 +32,22 @@ fetch('data/arbre.xlsx')
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
-    // Ajout de { raw: false } pour formater correctement les dates et nombres
-    const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
+    // Lecture standard sans forcer raw: false pour conserver toutes les valeurs
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
     const dataBySosa = {};
+    let maxGenFound = 1;
 
     rawData.forEach(row => {
       const sosa = parseInt(row['N° SOSA'], 10);
       
       if (!isNaN(sosa)) {
-        // Détermination du genre selon la règle Sosa (Sosa 1 est un homme)
         const isMale = sosa === 1 || sosa % 2 === 0;
+        const gen = parseInt(row['Rang / Gén.'], 10) || (Math.floor(Math.log2(sosa)) + 1);
+        if (gen > maxGenFound) maxGenFound = gen;
 
         dataBySosa[sosa] = {
           sosa: sosa,
-          generation: row['Rang / Gén.'],
+          generation: gen,
           personne: String(row['Personne']).trim(),
           isMale: isMale,
           dateNaissance: row['Date de naissance'],
@@ -49,139 +67,154 @@ fetch('data/arbre.xlsx')
       }
     });
 
-    // Construction récursive de la hiérarchie
-    function buildHierarchy(sosa) {
-      const person = dataBySosa[sosa];
-      if (!person) return null;
-
-      const node = { ...person, children: [] };
-
-      if (dataBySosa[person.fatherSosa]) {
-        const father = buildHierarchy(person.fatherSosa);
-        if (father) node.children.push(father);
+    const genSelect = d3.select("#gen-select");
+    if (genSelect.node() && genSelect.empty()) {
+      for (let i = 1; i <= maxGenFound; i++) {
+        genSelect.append("option")
+          .attr("value", i)
+          .text(`${i} génération${i > 1 ? 's' : ''}`)
+          .property("selected", i === maxGenFound);
       }
-
-      if (dataBySosa[person.motherSosa]) {
-        const mother = buildHierarchy(person.motherSosa);
-        if (mother) node.children.push(mother);
-      }
-
-      return node;
     }
 
-    const rootData = buildHierarchy(1);
-    if (!rootData) {
-      console.error("Aucune personne avec le N° SOSA 1 n'a été trouvée.");
-      return;
-    }
-
-    const root = d3.hierarchy(rootData);
-    
-    // Configuration du layout avec espacement dynamique entre nœuds voisins
-    const treeLayout = d3.tree()
-      .nodeSize([280, nodeHeight + 85]) // Augmentation du pas de base X (280px)
-      .separation((a, b) => {
-        // Calcul du besoin de largeur combinée des deux nœuds adjacents
-        const widthA = calculateNodeWidth(a.data.personne);
-        const widthB = calculateNodeWidth(b.data.personne);
-        const requiredSpacing = (widthA + widthB) / 2 + 40; // 40px d'espace de sécurité entre cartes
-        const baseStep = 280;
-        
-        const factor = requiredSpacing / baseStep;
-        // Si a et b sont de mêmes parents, on applique la distance calculée, sinon un peu plus
-        return a.parent === b.parent ? Math.max(1.1, factor) : Math.max(1.3, factor * 1.15);
-      });
-
-    treeLayout(root);
-
-    // Initialisation du SVG
     const svg = d3.select("#tree-container").append("svg").attr("width", "100%").attr("height", "100%");
     const g = svg.append("g");
 
-    // Gestion du Zoom et Pan
-    const zoom = d3.zoom().scaleExtent([0.1, 2.5]).on("zoom", (event) => g.attr("transform", event.transform));
+    const zoom = d3.zoom().scaleExtent([0.05, 3]).on("zoom", (event) => g.attr("transform", event.transform));
     svg.call(zoom);
 
-    // Centrage initial sur le SOSA 1
-    const initialX = window.innerWidth / 2;
-    const initialY = window.innerHeight - 150;
-    svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(0.8));
+    function renderTree(maxGen) {
+      g.selectAll("*").remove();
 
-    // Dessin des liens (Traits noirs)
-    g.selectAll(".link")
-      .data(root.links())
-      .enter()
-      .append("path")
-      .attr("class", "link")
-      .attr("d", d3.linkVertical().x(d => d.x).y(d => -d.y));
+      function buildHierarchy(sosa) {
+        const person = dataBySosa[sosa];
+        if (!person || person.generation > maxGen) return null;
 
-    // Dessin des cartes (Nœuds)
-    const nodes = g.selectAll(".node")
-      .data(root.descendants())
-      .enter()
-      .append("g")
-      .attr("class", d => `node ${d.data.isMale ? 'node-male' : 'node-female'}`)
-      .attr("transform", d => {
-        const w = calculateNodeWidth(d.data.personne);
-        return `translate(${d.x - w / 2}, ${-d.y - nodeHeight / 2})`;
-      });
+        const node = { ...person, children: [] };
 
-    // Rectangle avec largeur adaptée
-    nodes.append("rect")
-      .attr("width", d => calculateNodeWidth(d.data.personne))
-      .attr("height", nodeHeight);
+        if (dataBySosa[person.fatherSosa] && dataBySosa[person.fatherSosa].generation <= maxGen) {
+          const father = buildHierarchy(person.fatherSosa);
+          if (father) node.children.push(father);
+        }
 
-    // N° Sosa
-    nodes.append("text")
-      .attr("class", "sosa")
-      .attr("x", 10)
-      .attr("y", 16)
-      .text(d => `Sosa ${d.data.sosa}`);
+        if (dataBySosa[person.motherSosa] && dataBySosa[person.motherSosa].generation <= maxGen) {
+          const mother = buildHierarchy(person.motherSosa);
+          if (mother) node.children.push(mother);
+        }
 
-    // Nom complet
-    nodes.append("text")
-      .attr("class", "name")
-      .attr("x", 10)
-      .attr("y", 35)
-      .text(d => d.data.personne);
+        return node;
+      }
 
-    // Dates
-    nodes.append("text")
-      .attr("class", "dates")
-      .attr("x", 10)
-      .attr("y", 53)
-      .text(d => {
-        const n = d.data.dateNaissance ? String(d.data.dateNaissance).split('/').pop() : '?';
-        const dcs = d.data.dateDeces ? String(d.data.dateDeces).split('/').pop() : '';
+      const rootData = buildHierarchy(1);
+      if (!rootData) return;
+
+      const root = d3.hierarchy(rootData);
+      
+      const treeLayout = d3.tree()
+        .nodeSize([280, nodeHeight + 85])
+        .separation((a, b) => {
+          const widthA = calculateNodeWidth(a.data.personne);
+          const widthB = calculateNodeWidth(b.data.personne);
+          const requiredSpacing = (widthA + widthB) / 2 + 40;
+          const factor = requiredSpacing / 280;
+          return a.parent === b.parent ? Math.max(1.1, factor) : Math.max(1.3, factor * 1.15);
+        });
+
+      treeLayout(root);
+
+      const descendants = root.descendants();
+
+      g.selectAll(".link")
+        .data(root.links())
+        .enter()
+        .append("path")
+        .attr("class", "link")
+        .attr("d", d3.linkVertical().x(d => d.x).y(d => -d.y));
+
+      const nodes = g.selectAll(".node")
+        .data(descendants)
+        .enter()
+        .append("g")
+        .attr("class", d => `node ${d.data.isMale ? 'node-male' : 'node-female'}`)
+        .attr("transform", d => {
+          const w = calculateNodeWidth(d.data.personne);
+          return `translate(${d.x - w / 2}, ${-d.y - nodeHeight / 2})`;
+        });
+
+      nodes.append("rect")
+        .attr("width", d => calculateNodeWidth(d.data.personne))
+        .attr("height", nodeHeight);
+
+      nodes.append("text").attr("class", "sosa").attr("x", 10).attr("y", 16).text(d => `Sosa ${d.data.sosa}`);
+      nodes.append("text").attr("class", "name").attr("x", 10).attr("y", 35).text(d => d.data.personne);
+      
+      // Affichage propre des années extraites
+      nodes.append("text").attr("class", "dates").attr("x", 10).attr("y", 53).text(d => {
+        const n = extractYear(d.data.dateNaissance) || '?';
+        const dcs = extractYear(d.data.dateDeces);
         return `${n} - ${dcs}`;
       });
 
-    // Info-bulle au survol (Tooltip)
-    const tooltip = d3.select("#tooltip");
+      const tooltip = d3.select("#tooltip");
+      nodes.on("mouseover", (event, d) => {
+        const p = d.data;
+        tooltip.html(`
+          <div class="tooltip-header">
+            <div class="tooltip-title">${p.personne}</div>
+            <div class="tooltip-subtitle">Sosa ${p.sosa} ${p.generation ? '• Génération ' + p.generation : ''}</div>
+          </div>
+          <div class="tooltip-row"><strong>Naissance :</strong> ${p.dateNaissance || '?'} ${p.lieuNaissance ? 'à ' + p.lieuNaissance : ''}</div>
+          <div class="tooltip-row"><strong>Décès :</strong> ${p.dateDeces || 'Inconnu'} ${p.lieuDeces ? 'à ' + p.lieuDeces : ''} ${p.age ? '(' + p.age + ' ans)' : ''}</div>
+          <div class="tooltip-row"><strong>Profession :</strong> ${p.profession || 'Non renseignée'}</div>
+          <div class="tooltip-row"><strong>Union :</strong> ${p.conjoint || 'Non renseignée'} ${p.dateMariage ? '(' + p.dateMariage + ')' : ''} ${p.lieuMariage ? 'à ' + p.lieuMariage : ''}</div>
+          ${p.notes ? `<div class="tooltip-notes"><strong>Note :</strong> ${p.notes}</div>` : ''}
+        `);
+        tooltip.style("opacity", 1);
+      })
+      .on("mousemove", (event) => {
+        tooltip.style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 15) + "px");
+      })
+      .on("mouseout", () => {
+        tooltip.style("opacity", 0);
+      });
 
-    nodes.on("mouseover", (event, d) => {
-      const p = d.data;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      descendants.forEach(d => {
+        const w = calculateNodeWidth(d.data.personne);
+        if (d.x - w / 2 < minX) minX = d.x - w / 2;
+        if (d.x + w / 2 > maxX) maxX = d.x + w / 2;
+        if (-d.y - nodeHeight / 2 < minY) minY = -d.y - nodeHeight / 2;
+        if (-d.y + nodeHeight / 2 > maxY) maxY = -d.y + nodeHeight / 2;
+      });
 
-      tooltip.html(`
-        <div class="tooltip-header">
-          <div class="tooltip-title">${p.personne}</div>
-          <div class="tooltip-subtitle">Sosa ${p.sosa} ${p.generation ? '• Génération ' + p.generation : ''}</div>
-        </div>
-        <div class="tooltip-row"><strong>Naissance :</strong> ${p.dateNaissance || '?'} ${p.lieuNaissance ? 'à ' + p.lieuNaissance : ''}</div>
-        <div class="tooltip-row"><strong>Décès :</strong> ${p.dateDeces || 'Inconnu'} ${p.lieuDeces ? 'à ' + p.lieuDeces : ''} ${p.age ? '(' + p.age + ' ans)' : ''}</div>
-        <div class="tooltip-row"><strong>Profession :</strong> ${p.profession || 'Non renseignée'}</div>
-        <div class="tooltip-row"><strong>Union :</strong> ${p.conjoint || 'Non renseignée'} ${p.dateMariage ? '(' + p.dateMariage + ')' : ''} ${p.lieuMariage ? 'à ' + p.lieuMariage : ''}</div>
-        ${p.notes ? `<div class="tooltip-notes"><strong>Note :</strong> ${p.notes}</div>` : ''}
-      `);
+      const treeWidth = maxX - minX;
+      const treeHeight = maxY - minY;
+      const viewWidth = window.innerWidth;
+      const viewHeight = window.innerHeight;
 
-      tooltip.style("opacity", 1);
-    })
-    .on("mousemove", (event) => {
-      tooltip.style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 15) + "px");
-    })
-    .on("mouseout", () => {
-      tooltip.style("opacity", 0);
-    });
+      const scaleX = (viewWidth * 0.85) / treeWidth;
+      const scaleY = (viewHeight * 0.75) / treeHeight;
+      const targetScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.1), 1.0);
+
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+
+      const translateX = viewWidth / 2 - centerX * targetScale;
+      const translateY = viewHeight / 2 - centerY * targetScale;
+
+      svg.transition()
+        .duration(750)
+        .call(zoom.transform, d3.zoomIdentity.translate(translateX, translateY).scale(targetScale));
+    }
+
+    renderTree(maxGenFound);
+
+    if (genSelect.node() && !genSelect.selectAll("option").empty()) {
+      genSelect.on("change", function() {
+        const selectedGen = parseInt(this.value, 10);
+        renderTree(selectedGen);
+      });
+    }
 
   })
   .catch(err => console.error("Erreur de chargement du fichier Excel :", err));
