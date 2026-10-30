@@ -7,19 +7,15 @@ function calculateNodeWidth(name) {
   return Math.max(defaultNodeWidth, charCount * 9 + 30);
 }
 
-// Fonction robuste pour extraire l'année (texte, JJ/MM/AAAA ou nombre sériel Excel)
+// Fonction robuste pour extraire l'année ou la date lisible
 function extractYear(val) {
   if (!val) return '';
-  if (typeof val === 'number') {
-    const d = new Date(Math.round((val - (25569 + 2)) * 86400 * 1000));
-    return !isNaN(d.getFullYear()) ? d.getFullYear() : val;
-  }
   const s = String(val).trim();
   if (s.includes('/')) {
     const parts = s.split('/');
     return parts[parts.length - 1].trim();
   }
-  const match = s.match(/\b(1[5-9]\d{2}|20\d{2})\b/);
+  const match = s.match(/\b(1[2-9]\d{2}|20\d{2})\b/);
   if (match) return match[0];
   return s;
 }
@@ -32,7 +28,6 @@ fetch('data/arbre.xlsx')
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
-    // Lecture standard sans forcer raw: false pour conserver toutes les valeurs
     const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
     const dataBySosa = {};
     let maxGenFound = 1;
@@ -68,7 +63,7 @@ fetch('data/arbre.xlsx')
     });
 
     const genSelect = d3.select("#gen-select");
-    if (genSelect.node() && genSelect.empty()) {
+    if (genSelect.node() && genSelect.selectAll("option").empty()) {
       for (let i = 1; i <= maxGenFound; i++) {
         genSelect.append("option")
           .attr("value", i)
@@ -148,7 +143,6 @@ fetch('data/arbre.xlsx')
       nodes.append("text").attr("class", "sosa").attr("x", 10).attr("y", 16).text(d => `Sosa ${d.data.sosa}`);
       nodes.append("text").attr("class", "name").attr("x", 10).attr("y", 35).text(d => d.data.personne);
       
-      // Affichage propre des années extraites
       nodes.append("text").attr("class", "dates").attr("x", 10).attr("y", 53).text(d => {
         const n = extractYear(d.data.dateNaissance) || '?';
         const dcs = extractYear(d.data.dateDeces);
@@ -158,6 +152,7 @@ fetch('data/arbre.xlsx')
       const tooltip = d3.select("#tooltip");
       nodes.on("mouseover", (event, d) => {
         const p = d.data;
+        
         tooltip.html(`
           <div class="tooltip-header">
             <div class="tooltip-title">${p.personne}</div>
