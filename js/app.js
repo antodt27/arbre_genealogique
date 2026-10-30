@@ -16,7 +16,8 @@ fetch('data/arbre.xlsx')
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     
-    const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+    // Ajout de { raw: false } pour formater correctement les dates et nombres
+    const rawData = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
     const dataBySosa = {};
 
     rawData.forEach(row => {
