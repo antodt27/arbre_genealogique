@@ -7,17 +7,34 @@ function calculateNodeWidth(name) {
   return Math.max(defaultNodeWidth, charCount * 9 + 30);
 }
 
-// Fonction robuste pour extraire l'année ou la date lisible
+// Fonction pour convertir proprement les dates Excel (numéros de série ou texte) en JJ/MM/AAAA
+function formatDate(val) {
+  if (!val && val !== 0) return '';
+  // Si c'est un numéro de série Excel brut
+  if (typeof val === 'number') {
+    const utcDays = Math.floor(val - 25569);
+    const utcValue = utcDays * 86400 * 1000;
+    const dateInfo = new Date(utcValue);
+    if (!isNaN(dateInfo.getTime())) {
+      const day = String(dateInfo.getUTCDate()).padStart(2, '0');
+      const month = String(dateInfo.getUTCMonth() + 1).padStart(2, '0');
+      const year = dateInfo.getUTCFullYear();
+      return `${day}/${month}/${year}`;
+    }
+  }
+  return String(val).trim();
+}
+
+// Fonction pour extraire l'année pour l'affichage sur la carte
 function extractYear(val) {
-  if (!val) return '';
-  const s = String(val).trim();
-  if (s.includes('/')) {
-    const parts = s.split('/');
+  const formatted = formatDate(val);
+  if (!formatted) return '';
+  if (formatted.includes('/')) {
+    const parts = formatted.split('/');
     return parts[parts.length - 1].trim();
   }
-  const match = s.match(/\b(1[2-9]\d{2}|20\d{2})\b/);
-  if (match) return match[0];
-  return s;
+  const match = formatted.match(/\b(1[2-9]\d{2}|20\d{2})\b/);
+  return match ? match[0] : formatted;
 }
 
 // Charger le fichier Excel 'data/arbre.xlsx'
@@ -62,8 +79,10 @@ fetch('data/arbre.xlsx')
       }
     });
 
+    // Remplir le menu déroulant des générations une seule fois
     const genSelect = d3.select("#gen-select");
-    if (genSelect.node() && genSelect.selectAll("option").empty()) {
+    if (!genSelect.empty()) {
+      genSelect.selectAll("*").remove();
       for (let i = 1; i <= maxGenFound; i++) {
         genSelect.append("option")
           .attr("value", i)
@@ -152,16 +171,19 @@ fetch('data/arbre.xlsx')
       const tooltip = d3.select("#tooltip");
       nodes.on("mouseover", (event, d) => {
         const p = d.data;
+        const birthFormatted = formatDate(p.dateNaissance);
+        const deathFormatted = formatDate(p.dateDeces);
+        const marriageFormatted = formatDate(p.dateMariage);
         
         tooltip.html(`
           <div class="tooltip-header">
             <div class="tooltip-title">${p.personne}</div>
             <div class="tooltip-subtitle">Sosa ${p.sosa} ${p.generation ? '• Génération ' + p.generation : ''}</div>
           </div>
-          <div class="tooltip-row"><strong>Naissance :</strong> ${p.dateNaissance || '?'} ${p.lieuNaissance ? 'à ' + p.lieuNaissance : ''}</div>
-          <div class="tooltip-row"><strong>Décès :</strong> ${p.dateDeces || 'Inconnu'} ${p.lieuDeces ? 'à ' + p.lieuDeces : ''} ${p.age ? '(' + p.age + ' ans)' : ''}</div>
+          <div class="tooltip-row"><strong>Naissance :</strong> ${birthFormatted || '?'} ${p.lieuNaissance ? 'à ' + p.lieuNaissance : ''}</div>
+          <div class="tooltip-row"><strong>Décès :</strong> ${deathFormatted || 'Inconnu'} ${p.lieuDeces ? 'à ' + p.lieuDeces : ''} ${p.age ? '(' + p.age + ' ans)' : ''}</div>
           <div class="tooltip-row"><strong>Profession :</strong> ${p.profession || 'Non renseignée'}</div>
-          <div class="tooltip-row"><strong>Union :</strong> ${p.conjoint || 'Non renseignée'} ${p.dateMariage ? '(' + p.dateMariage + ')' : ''} ${p.lieuMariage ? 'à ' + p.lieuMariage : ''}</div>
+          <div class="tooltip-row"><strong>Union :</strong> ${p.conjoint || 'Non renseignée'} ${marriageFormatted ? '(' + marriageFormatted + ')' : ''} ${p.lieuMariage ? 'à ' + p.lieuMariage : ''}</div>
           ${p.notes ? `<div class="tooltip-notes"><strong>Note :</strong> ${p.notes}</div>` : ''}
         `);
         tooltip.style("opacity", 1);
@@ -204,12 +226,10 @@ fetch('data/arbre.xlsx')
 
     renderTree(maxGenFound);
 
-    if (genSelect.node() && !genSelect.selectAll("option").empty()) {
-      genSelect.on("change", function() {
-        const selectedGen = parseInt(this.value, 10);
-        renderTree(selectedGen);
-      });
-    }
+    genSelect.on("change", function() {
+      const selectedGen = parseInt(this.value, 10);
+      renderTree(selectedGen);
+    });
 
   })
   .catch(err => console.error("Erreur de chargement du fichier Excel :", err));
